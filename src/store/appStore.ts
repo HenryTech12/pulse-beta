@@ -6,6 +6,7 @@ import { runSimulatedPayment, type PaymentResult } from '@/lib/payments';
 import { getProvider, buildEvidence, recommend, type CopilotContext } from '@/lib/copilot';
 import { confidenceFor } from '@/lib/patterns';
 import { signInWithPhone, signUpWithPhone, signOut, fetchProfile } from '@/lib/auth';
+import { demoUserIdFor } from '@/lib/demoUser';
 import { getSupabase } from '@/lib/env';
 import type {
   Case,
@@ -117,11 +118,11 @@ export const useStore = create<AppState>((set, get) => ({
   async initAuth() {
     const supabase = getSupabase();
     const { data: { session } } = await supabase.auth.getSession();
-    set({ session, authReady: true, userId: session?.user?.id ?? 'u_demo' });
+    set({ session, authReady: true, userId: session?.user ? demoUserIdFor(session.user.id) : 'u_demo' });
 
     supabase.auth.onAuthStateChange((_event, sess) => {
       (async () => {
-        set({ session: sess, userId: sess?.user?.id ?? 'u_demo' });
+        set({ session: sess, userId: sess?.user ? demoUserIdFor(sess.user.id) : 'u_demo' });
         if (sess?.user) {
           const profile = await fetchProfile(sess.user.id);
           if (profile) set({ profile });
@@ -139,7 +140,7 @@ export const useStore = create<AppState>((set, get) => ({
       const data = await signInWithPhone(phone, password);
       if (data.user) {
         const profile = await fetchProfile(data.user.id);
-        set({ profile, userId: data.user.id });
+        set({ profile, userId: demoUserIdFor(data.user.id) });
         sessionTracker.reset();
         get().trackScreen('login');
         await get().init();
@@ -158,7 +159,7 @@ export const useStore = create<AppState>((set, get) => ({
       const data = await signUpWithPhone(phone, password, name);
       if (data.user) {
         const profile = await fetchProfile(data.user.id);
-        set({ profile, userId: data.user.id });
+        set({ profile, userId: demoUserIdFor(data.user.id) });
         sessionTracker.reset();
         get().trackScreen('login');
         await get().init();

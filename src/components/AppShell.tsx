@@ -108,7 +108,7 @@ function Header({ onLogout }: { onLogout?: () => void }) {
         <div className="flex items-center gap-2">
           <span
             className={
-              'hidden sm:inline text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ' +
+              'text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ' +
               (env.useMock ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700')
             }
             title={env.useMock ? 'Using local mock decisions — set VITE_USE_MOCK=false to hit the real API' : `Live: ${env.apiBaseUrl}`}

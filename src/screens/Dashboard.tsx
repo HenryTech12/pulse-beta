@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useStore } from '@/store/appStore';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -19,10 +19,6 @@ export function Dashboard() {
 
   const txs = filteredTxs();
   const shown = txs.slice(0, visible);
-  const balance = useMemo(
-    () => txs.reduce((s, t) => s + (t.direction === 'in' ? t.amount_ngn : -t.amount_ngn), 510000),
-    [txs],
-  );
 
   return (
     <div className="space-y-5">
@@ -30,9 +26,17 @@ export function Dashboard() {
       <Card className="bg-gradient-to-br from-brand-500 to-brand-700 text-white border-0 overflow-hidden">
         <div className="p-5">
           <p className="text-brand-50/80 text-sm">Wallet balance</p>
-          <p className="text-3xl font-bold mt-1">
-            {personalization ? ngn(personalization.current_balance) : ngn(balance)}
-          </p>
+          {personalization ? (
+            <p className="text-3xl font-bold mt-1">{ngn(personalization.current_balance)}</p>
+          ) : (
+            <div className="mt-1">
+              <p className="text-3xl font-bold text-brand-50/50">— unavailable —</p>
+              <p className="text-xs text-brand-50/80 mt-1">
+                Couldn't load live PULSE personalization for this user. Check the API is reachable and
+                that this user id has a profile.
+              </p>
+            </div>
+          )}
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <Badge tone="brand" className="bg-white/20 text-white">
               {profile?.display_name ?? '—'}

@@ -244,6 +244,10 @@ export function Settings() {
             onChange={(e) => setUserId(e.target.value)}
             className="mt-1 w-full h-12 px-3 rounded-xl border border-ink-200 focus:border-brand-400"
           />
+          <span className="text-xs text-ink-400 mt-1 block">
+            Auto-mapped from your login to one of the 40 seeded PULSE demo users so personalization
+            resolves. Override here to test a specific user id.
+          </span>
         </label>
         <dl className="text-sm divide-y divide-ink-100">
           <SettingRow label="Display name" value={profile?.display_name ?? '—'} />
