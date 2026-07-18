@@ -3,9 +3,14 @@ import type { DemoProfile } from '@/types/contract';
 
 // Phone-based auth. Supabase uses email under the hood; we derive a synthetic
 // email from the phone number so phone is the user-facing credential.
+//
+// NOTE: this must NOT end in a reserved/special-use TLD (.local, .test,
+// .invalid, .example, .localhost) -- newer Supabase Auth projects validate
+// signup emails against that list and reject them outright, even though
+// nothing ever needs to actually deliver mail to this address.
 function phoneToEmail(phone: string): string {
   const digits = phone.replace(/\D/g, '');
-  return `${digits}@pulse.local`;
+  return `${digits}@pulseusers.app`;
 }
 
 export async function signInWithPhone(phone: string, password: string) {
