@@ -60,6 +60,10 @@ class MockStore {
     return c;
   }
 
+  addCase(c: Case) {
+    this.cases.unshift(c);
+  }
+
   updateCase(id: string, patch: Partial<Case>): Case {
     const idx = this.cases.findIndex((c) => c.case_id === id);
     if (idx < 0) throw new Error('case not found');

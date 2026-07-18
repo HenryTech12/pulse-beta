@@ -7,7 +7,7 @@ import { Send, Check, X, Loader2 } from 'lucide-react';
 import { ngn } from '@/types/contract';
 
 export function Transfer() {
-  const { trackScreen, trackKeystroke, submitSession, runPayment, paymentResult, clearPaymentResult, userId } = useStore();
+  const { trackScreen, trackKeystroke, submitSession, runPayment, finalizeTransfer, paymentResult, clearPaymentResult, userId, walletBalance } = useStore();
   const [step, setStep] = useState<'recipient' | 'amount' | 'confirm' | 'checking' | 'paying' | 'done' | 'blocked'>('recipient');
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
@@ -22,11 +22,13 @@ export function Transfer() {
     goto('checking');
     const proceed = await submitSession(Number(amount));
     if (!proceed) {
+      await finalizeTransfer('failed', Number(amount));
       goto('blocked');
       return;
     }
     goto('paying');
     const result = await runPayment(Number(amount));
+    await finalizeTransfer(result.status === 'success' ? 'success' : 'failed', Number(amount));
     goto(result.status === 'success' ? 'done' : 'blocked');
   };
 
@@ -123,6 +125,9 @@ export function Transfer() {
         )}
         {step === 'amount' && (
           <>
+            {walletBalance != null && (
+              <p className="text-xs text-ink-400">Available balance: {ngn(walletBalance)}</p>
+            )}
             <label className="block text-sm">
               <span className="text-ink-500">Amount (₦)</span>
               <input
@@ -203,7 +208,7 @@ export function Betting() {
 }
 
 export function Wallet() {
-  const { personalization } = useStore();
+  const { personalization, walletBalance } = useStore();
   return (
     <Card>
       <CardBody className="space-y-4">
@@ -211,7 +216,7 @@ export function Wallet() {
         <div className="rounded-xl bg-brand-50 p-4">
           <p className="text-brand-700 text-sm">Current balance</p>
           <p className="text-2xl font-bold text-brand-700">
-            {personalization ? ngn(personalization.current_balance) : '—'}
+            {walletBalance != null ? ngn(walletBalance) : '—'}
           </p>
         </div>
         <div className="rounded-xl bg-ink-50 p-4">

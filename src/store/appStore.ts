@@ -7,7 +7,8 @@ import { getProvider, buildEvidence, recommend, type CopilotContext } from '@/li
 import { confidenceFor } from '@/lib/patterns';
 import { signInWithPhone, signUpWithPhone, signOut, fetchProfile } from '@/lib/auth';
 import { demoUserIdFor } from '@/lib/demoUser';
-import { getSupabase } from '@/lib/env';
+import { listTransactions, insertTransaction, updateTransactionStatus, setWalletBalance, listCases, insertCase, updateCaseRow } from '@/lib/ledger';
+import { env, getSupabase } from '@/lib/env';
 import type {
   Case,
   CopilotMessage,
@@ -20,6 +21,7 @@ import type {
   SessionEventResponse,
   SessionLogEntry,
   Transaction,
+  TxStatus,
 } from '@/types/contract';
 
 interface Filters {
@@ -37,7 +39,9 @@ interface AppState {
   userId: string;
   profile: DemoProfile | null; // identity — Supabase-backed
   personalization: Personalization | null; // real PULSE risk-personalization payload
+  walletBalance: number | null; // live, debitable balance — persisted per Supabase account
   transactions: Transaction[];
+  lastTransactionId: string | null;
   cases: Case[];
   copilotOpen: boolean;
   copilotMessages: CopilotMessage[];
@@ -77,6 +81,9 @@ interface AppState {
   runPayment: (amountNgn: number) => Promise<PaymentResult>;
   clearPaymentResult: () => void;
   ingestTransaction: (t: Transaction) => void;
+  /** Settles the most recent transfer's final status and, on success,
+   * actually debits the wallet balance shown on Dashboard/Wallet. */
+  finalizeTransfer: (status: TxStatus, amountNgn: number) => Promise<void>;
 
   toggleCopilot: (open?: boolean) => void;
   runCopilot: (prompt: string) => Promise<void>;
@@ -88,6 +95,14 @@ interface AppState {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
+/** True when there's a real signed-in Supabase account AND we're pointed
+ * at a live backend — the two conditions under which anything should
+ * actually be persisted, rather than kept in the in-memory demo layer. */
+function livePersistenceOwner(session: AppState['session']): string | null {
+  if (env.useMock) return null;
+  return session?.user?.id ?? null;
+}
+
 export const useStore = create<AppState>((set, get) => ({
   ready: false,
   authReady: false,
@@ -95,7 +110,9 @@ export const useStore = create<AppState>((set, get) => ({
   userId: 'u_demo',
   profile: null,
   personalization: null,
+  walletBalance: null,
   transactions: [],
+  lastTransactionId: null,
   cases: [],
   copilotOpen: false,
   copilotMessages: [
@@ -128,7 +145,7 @@ export const useStore = create<AppState>((set, get) => ({
           if (profile) set({ profile });
           await get().init();
         } else {
-          set({ profile: null, personalization: null, transactions: [], cases: [], ready: false });
+          set({ profile: null, personalization: null, walletBalance: null, transactions: [], cases: [], ready: false });
         }
       })();
     });
@@ -179,7 +196,7 @@ export const useStore = create<AppState>((set, get) => ({
       await get().submitSession().catch(() => undefined);
     }
     await signOut();
-    set({ session: null, profile: null, personalization: null, transactions: [], cases: [], ready: false, copilotOpen: false });
+    set({ session: null, profile: null, personalization: null, walletBalance: null, transactions: [], cases: [], ready: false, copilotOpen: false });
   },
 
   async init() {
@@ -189,12 +206,33 @@ export const useStore = create<AppState>((set, get) => ({
     } catch {
       p = null;
     }
-    set({
-      personalization: p,
-      transactions: mockFixtures.getTransactions(),
-      cases: mockFixtures.getCases(),
-      ready: true,
-    });
+
+    const owner = livePersistenceOwner(get().session);
+
+    if (owner) {
+      // Real signed-in account on a live backend — real, persisted data.
+      let balance = get().profile?.wallet_balance_ngn ?? null;
+      if (balance == null && p) {
+        // First time this account has ever loaded a real balance --
+        // seed the debitable wallet from PULSE's reported current_balance
+        // and persist it so it's there next time.
+        balance = p.current_balance;
+        await setWalletBalance(owner, balance).catch(() => undefined);
+      }
+      const txs = await listTransactions(owner);
+      const cases = await listCases(owner);
+      set({ personalization: p, walletBalance: balance, transactions: txs, cases, ready: true });
+    } else {
+      // Mock mode, or no real session yet — the local, ephemeral demo
+      // layer, same as before. Never persisted, resets on reload.
+      set({
+        personalization: p,
+        walletBalance: p?.current_balance ?? null,
+        transactions: mockFixtures.getTransactions(),
+        cases: mockFixtures.getCases(),
+        ready: true,
+      });
+    }
   },
 
   setUserId(id) {
@@ -246,8 +284,10 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ lastSessionLog: log, sessionLogs: [log, ...s.sessionLogs].slice(0, 20) }));
     sessionTracker.reset();
 
-    // Log a demo-layer transaction row so Dashboard/Cases reflect what
-    // PULSE actually decided, when this was a transfer.
+    // Log a transaction row so Dashboard/Cases reflect what PULSE actually
+    // decided, when this was a transfer. Status here reflects the
+    // decision only — finalizeTransfer() below settles it once the
+    // (simulated) payment actually runs.
     if (amountNgn != null) {
       const tx: Transaction = {
         tx_id: 'TX-' + uid().toUpperCase(),
@@ -302,8 +342,35 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   ingestTransaction(t) {
-    mockFixtures.addTransaction(t);
-    set((s) => ({ transactions: [t, ...s.transactions] }));
+    const owner = livePersistenceOwner(get().session);
+    set((s) => ({ transactions: [t, ...s.transactions], lastTransactionId: t.tx_id }));
+    if (owner) {
+      insertTransaction(owner, t).catch(() => undefined);
+    } else {
+      mockFixtures.addTransaction(t);
+    }
+  },
+
+  async finalizeTransfer(status, amountNgn) {
+    const txId = get().lastTransactionId;
+    const owner = livePersistenceOwner(get().session);
+
+    if (txId) {
+      set((s) => ({ transactions: s.transactions.map((t) => (t.tx_id === txId ? { ...t, status } : t)) }));
+      if (owner) {
+        await updateTransactionStatus(owner, txId, status).catch(() => undefined);
+      }
+    }
+
+    if (status !== 'success') return;
+
+    const current = get().walletBalance;
+    if (current == null) return;
+    const next = current - amountNgn;
+    set({ walletBalance: next });
+    if (owner) {
+      await setWalletBalance(owner, next).catch(() => undefined);
+    }
   },
 
   toggleCopilot(open) {
@@ -356,7 +423,8 @@ export const useStore = create<AppState>((set, get) => ({
     const tx = get().transactions.find((t) => t.tx_id === txId);
     if (!tx) throw new Error('tx not found');
     const evidence: Evidence[] = buildEvidence(tx);
-    const c = mockFixtures.createCase({
+    const c: Case = {
+      case_id: 'C-' + uid().toUpperCase(),
       transaction_ids: [txId],
       evidence,
       recommended_action: recommend(tx),
@@ -364,7 +432,14 @@ export const useStore = create<AppState>((set, get) => ({
       status: 'open',
       notes: [{ author: 'copilot', body: reason, ts: Date.now() }],
       confidence: confidenceFor(tx),
-    });
+      created_at: Date.now(),
+    };
+    const ownerId = livePersistenceOwner(get().session);
+    if (ownerId) {
+      await insertCase(ownerId, c).catch(() => undefined);
+    } else {
+      mockFixtures.addCase(c);
+    }
     set((s) => ({
       cases: [c, ...s.cases],
       copilotMessages: s.copilotMessages.map((m) =>
@@ -375,16 +450,27 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async assignCase(caseId, owner) {
-    const c = mockFixtures.updateCase(caseId, { owner });
-    set((s) => ({ cases: s.cases.map((x) => (x.case_id === caseId ? c : x)) }));
+    set((s) => ({ cases: s.cases.map((c) => (c.case_id === caseId ? { ...c, owner } : c)) }));
+    const ownerId = livePersistenceOwner(get().session);
+    if (ownerId) {
+      await updateCaseRow(ownerId, caseId, { owner }).catch(() => undefined);
+    } else {
+      mockFixtures.updateCase(caseId, { owner });
+    }
   },
 
   async addCaseNote(caseId, body) {
     const prev = get().cases.find((c) => c.case_id === caseId);
     if (!prev) return;
     const note = { author: 'analyst', body, ts: Date.now() };
-    const c = mockFixtures.updateCase(caseId, { notes: [...prev.notes, note] });
-    set((s) => ({ cases: s.cases.map((x) => (x.case_id === caseId ? c : x)) }));
+    const notes = [...prev.notes, note];
+    set((s) => ({ cases: s.cases.map((c) => (c.case_id === caseId ? { ...c, notes } : c)) }));
+    const ownerId = livePersistenceOwner(get().session);
+    if (ownerId) {
+      await updateCaseRow(ownerId, caseId, { notes }).catch(() => undefined);
+    } else {
+      mockFixtures.updateCase(caseId, { notes });
+    }
   },
 }));
 

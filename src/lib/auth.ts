@@ -55,7 +55,7 @@ export async function fetchProfile(userId: string): Promise<DemoProfile | null> 
   const supabase = getSupabase();
   const { data } = await supabase
     .from('profiles')
-    .select('id, phone, display_name, home_country, preferred_language, last_login_geo')
+    .select('id, phone, display_name, home_country, preferred_language, last_login_geo, wallet_balance_ngn')
     .eq('id', userId)
     .maybeSingle();
 
@@ -67,6 +67,7 @@ export async function fetchProfile(userId: string): Promise<DemoProfile | null> 
     home_country: data.home_country ?? 'NG',
     preferred_language: data.preferred_language ?? 'en',
     last_login_geo: data.last_login_geo ?? undefined,
+    wallet_balance_ngn: data.wallet_balance_ngn != null ? Number(data.wallet_balance_ngn) : null,
   };
 }
 

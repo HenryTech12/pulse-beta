@@ -85,6 +85,7 @@ export interface DemoProfile {
   home_country: string;
   preferred_language: string;
   last_login_geo?: string;
+  wallet_balance_ngn: number | null;
 }
 
 export type TxStatus = 'success' | 'pending' | 'failed' | 'flagged';

@@ -12,7 +12,7 @@ import { ngn } from '@/types/contract';
 const PAGE = 12;
 
 export function Dashboard() {
-  const { profile, personalization, filteredTxs, toggleCopilot } = useStore();
+  const { profile, personalization, walletBalance, filteredTxs, toggleCopilot } = useStore();
   const [visible, setVisible] = useState(PAGE);
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -26,8 +26,8 @@ export function Dashboard() {
       <Card className="bg-gradient-to-br from-brand-500 to-brand-700 text-white border-0 overflow-hidden">
         <div className="p-5">
           <p className="text-brand-50/80 text-sm">Wallet balance</p>
-          {personalization ? (
-            <p className="text-3xl font-bold mt-1">{ngn(personalization.current_balance)}</p>
+          {walletBalance != null ? (
+            <p className="text-3xl font-bold mt-1">{ngn(walletBalance)}</p>
           ) : (
             <div className="mt-1">
               <p className="text-3xl font-bold text-brand-50/50">— unavailable —</p>
