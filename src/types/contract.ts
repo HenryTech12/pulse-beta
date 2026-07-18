@@ -80,6 +80,7 @@ export function ngn(amount: number): string {
  * real PULSE risk-personalization payload above. */
 export interface DemoProfile {
   user_id: string;
+  phone: string;
   display_name: string;
   home_country: string;
   preferred_language: string;

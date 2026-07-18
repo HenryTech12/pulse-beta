@@ -62,6 +62,7 @@ export async function fetchProfile(userId: string): Promise<DemoProfile | null> 
   if (!data) return null;
   return {
     user_id: data.id,
+    phone: data.phone,
     display_name: data.display_name ?? 'Pulse User',
     home_country: data.home_country ?? 'NG',
     preferred_language: data.preferred_language ?? 'en',

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '@/store/appStore';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { api } from '@/lib/api';
 import { ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import { ngn } from '@/types/contract';
 
@@ -10,28 +11,67 @@ import { ngn } from '@/types/contract';
 // Integration Fix Brief (§3.2): the PULSE decision has to be visible and
 // understandable to the user, not just computed on a server nobody sees.
 //   approve         -> no modal at all, the action proceeds silently
-//   soft_challenge  -> this modal, a distinct extra verification step
+//   soft_challenge  -> this modal, backed by a real Twilio Verify OTP
 //   block           -> this modal, an unmistakable stop, nothing proceeds
 export function DecisionGate() {
   const pending = useStore((s) => s.pendingDecision);
   const resolve = useStore((s) => s.resolvePendingDecision);
-  const [answer, setAnswer] = useState('');
+  const profile = useStore((s) => s.profile);
+  const [code, setCode] = useState('');
   const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sendState, setSendState] = useState<'sending' | 'sent' | 'simulated' | 'failed'>('sending');
+
+  const isBlock = pending?.response.decision === 'block';
+
+  // Fire the real OTP the moment a soft_challenge appears -- once per
+  // challenge, not once per render.
+  useEffect(() => {
+    if (!pending || isBlock) return;
+    if (!profile?.phone) {
+      setSendState('failed');
+      setError('No phone number on file for this account -- cannot send a verification code.');
+      return;
+    }
+    let cancelled = false;
+    setSendState('sending');
+    api
+      .sendOtp(profile.phone)
+      .then((res) => {
+        if (cancelled) return;
+        setSendState(res.simulated ? 'simulated' : 'sent');
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setSendState('failed');
+        setError(e instanceof Error ? e.message : 'Could not send the verification code.');
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending?.response.decision]);
 
   if (!pending) return null;
   const { response, amountNgn } = pending;
-  const isBlock = response.decision === 'block';
 
-  const submitChallenge = () => {
+  const submitChallenge = async () => {
+    if (!profile?.phone) return;
     setChecking(true);
-    // Demo-scale check: any non-empty answer clears the soft challenge —
-    // the point being demonstrated is that a distinct step existed, not a
-    // real knowledge-based-auth backend.
-    setTimeout(() => {
+    setError(null);
+    try {
+      const result = await api.verifyOtp(profile.phone, code);
+      if (result.approved) {
+        setCode('');
+        resolve(true);
+      } else {
+        setError('That code didn\u2019t match. Check your messages and try again.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Verification failed.');
+    } finally {
       setChecking(false);
-      setAnswer('');
-      resolve(answer.trim().length > 0);
-    }, 500);
+    }
   };
 
   return (
@@ -78,20 +118,31 @@ export function DecisionGate() {
         ) : (
           <div className="space-y-3 text-left">
             <label className="block text-sm">
-              <span className="text-ink-500">Security answer — mother's maiden name</span>
+              <span className="text-ink-500">Enter the verification code sent to {profile?.phone ?? 'your phone'}</span>
               <input
                 autoFocus
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder="Type anything to continue the demo"
-                className="mt-1 w-full h-11 px-3 rounded-xl border border-ink-200 focus:border-brand-400"
+                inputMode="numeric"
+                maxLength={8}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="6-digit code"
+                disabled={sendState === 'failed'}
+                className="mt-1 w-full h-11 px-3 rounded-xl border border-ink-200 focus:border-brand-400 tracking-widest font-mono"
               />
+              <span className="text-xs text-ink-400 mt-1 block">
+                {sendState === 'sending' && 'Sending code via Twilio…'}
+                {sendState === 'sent' && 'Real code sent via Twilio Verify.'}
+                {sendState === 'simulated' &&
+                  'Demo mode — no live Twilio credentials configured, any 4+ digit code is accepted.'}
+                {sendState === 'failed' && !error && 'Could not send a code.'}
+              </span>
             </label>
+            {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex gap-2">
               <Button block variant="outline" onClick={() => resolve(false)}>
                 Cancel
               </Button>
-              <Button block loading={checking} onClick={submitChallenge}>
+              <Button block loading={checking} disabled={code.trim().length < 4} onClick={submitChallenge}>
                 Verify & continue
               </Button>
             </div>
