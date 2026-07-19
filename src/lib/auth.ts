@@ -31,13 +31,24 @@ export async function signUpWithPhone(phone: string, password: string, displayNa
   });
   if (error) throw error;
 
-  // Create profile row
+  // Create profile row -- this must not fail silently. If session.user
+  // exists but data.session doesn't (e.g. email confirmation is still
+  // required), auth.uid() won't resolve yet and this insert will be
+  // rejected by RLS -- previously that error was swallowed, leaving a
+  // real auth.users row with no matching profile and permanently blank
+  // display_name/home_country/language in the app.
   if (data.user) {
-    await supabase.from('profiles').upsert({
+    const { error: profileError } = await supabase.from('profiles').upsert({
       id: data.user.id,
       phone,
       display_name: displayName || 'Pulse User',
     });
+    if (profileError) {
+      throw new Error(
+        `Account created but profile setup failed: ${profileError.message}. ` +
+          `This usually means email confirmation is still required in Supabase Auth settings.`,
+      );
+    }
   }
   return data;
 }
