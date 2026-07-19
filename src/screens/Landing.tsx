@@ -1,5 +1,16 @@
-import { ShieldCheck, Activity, Brain, MapPin, Keyboard, FileText, ArrowRight, CheckCircle2, Lock, Zap, Globe } from 'lucide-react';
+import { useState } from 'react';
+import { ShieldCheck, Activity, Brain, MapPin, Keyboard, FileText, ArrowRight, CheckCircle2, Lock, Zap, Globe, PlayCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+
+// Google Drive's /preview URL embeds a player in an iframe. Requires the
+// file's sharing setting to be "Anyone with the link can view" -- if it's
+// restricted to specific people, the iframe will show a Google sign-in
+// wall instead of the video. The "Open in Google Drive" link below is a
+// fallback for exactly that case.
+const DEMO_VIDEO_ID = '1WGtd6HovpxbkilSigOhL_v_2vZQZwG7V';
+const DEMO_VIDEO_EMBED_URL = `https://drive.google.com/file/d/${DEMO_VIDEO_ID}/preview`;
+const DEMO_VIDEO_VIEW_URL = `https://drive.google.com/file/d/${DEMO_VIDEO_ID}/view`;
 
 interface Props {
   onEnter: () => void;
@@ -7,6 +18,7 @@ interface Props {
 }
 
 export function Landing({ onEnter, onLogin }: Props) {
+  const [videoOpen, setVideoOpen] = useState(false);
   return (
     <div className="min-h-screen bg-white">
       {/* Nav */}
@@ -45,6 +57,9 @@ export function Landing({ onEnter, onLogin }: Props) {
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <Button size="lg" onClick={onEnter} rightIcon={<ArrowRight size={18} />}>
               Explore the demo
+            </Button>
+            <Button variant="outline" size="lg" leftIcon={<PlayCircle size={18} />} onClick={() => setVideoOpen(true)}>
+              Watch demo video
             </Button>
             <Button variant="outline" size="lg" onClick={onLogin}>
               Sign in with phone
@@ -145,6 +160,9 @@ export function Landing({ onEnter, onLogin }: Props) {
         </p>
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
           <Button size="lg" onClick={onEnter} rightIcon={<ArrowRight size={18} />}>Open the demo</Button>
+          <Button variant="outline" size="lg" leftIcon={<PlayCircle size={18} />} onClick={() => setVideoOpen(true)}>
+            Watch demo video
+          </Button>
           <Button variant="outline" size="lg" onClick={onLogin}>Sign in</Button>
         </div>
       </section>
@@ -163,6 +181,27 @@ export function Landing({ onEnter, onLogin }: Props) {
           </div>
         </div>
       </footer>
+
+      <Modal open={videoOpen} onClose={() => setVideoOpen(false)} title="Pulse demo" size="lg">
+        <div className="p-4">
+          <div className="relative w-full rounded-xl overflow-hidden bg-ink-900" style={{ aspectRatio: '16 / 9' }}>
+            <iframe
+              src={DEMO_VIDEO_EMBED_URL}
+              className="absolute inset-0 w-full h-full"
+              allow="autoplay"
+              allowFullScreen
+              title="Pulse demo video"
+            />
+          </div>
+          <p className="text-xs text-ink-400 mt-3 text-center">
+            Video not loading?{' '}
+            <a href={DEMO_VIDEO_VIEW_URL} target="_blank" rel="noopener noreferrer" className="text-brand-600 underline">
+              Open it directly in Google Drive
+            </a>
+            .
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }
